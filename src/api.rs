@@ -5,6 +5,9 @@ use std::collections::HashMap;
 use std::io::Cursor;
 
 pub fn send_to_api(config: &HashMap<String, String>, img: image::RgbaImage) -> Result<()> {
+    let mut clipboard = Clipboard::new()?;
+    clipboard.set_text("")?; // 清空剪贴板
+
     let mut png_buffer = Cursor::new(Vec::new()); //将一维内存数组包装成一个符合标准 I/O 规范的虚拟流对象
     img.write_to(&mut png_buffer, image::ImageFormat::Png)?;
     let b64_string = BASE64_STANDARD.encode(png_buffer.into_inner());
@@ -51,7 +54,7 @@ pub fn send_to_api(config: &HashMap<String, String>, img: image::RgbaImage) -> R
     if let Some(content) = response_json["choices"][0]["message"]["content"].as_str() {
         let latex_code = content.trim();
         println!("识别完成！\n{}", latex_code);
-        let mut clipboard = Clipboard::new()?;
+
         clipboard.set_text(latex_code)?;
         println!("==== 已成功复制到剪贴板 ====");
     } else {
