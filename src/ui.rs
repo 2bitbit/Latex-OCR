@@ -1,12 +1,12 @@
 use crate::api::send_to_api;
 use anyhow::{Context, Result};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
-use screenshots::Screen;
 use std::collections::HashMap;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_STYLE, GetWindowLongW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SetProcessDPIAware,
     SetWindowLongW, SetWindowPos, WS_CAPTION, WS_THICKFRAME,
 };
+use xcap::Monitor;
 
 pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     unsafe {
@@ -14,13 +14,13 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     }
 
     // 1. 抓取屏幕并提取所有像素点
-    let screens = Screen::all().with_context(|| "无法获取显示器列表")?;
-    let screen = screens.first().with_context(|| "没有找到屏幕")?;
-    let capture = screen.capture().with_context(|| "抓图失败")?;
+    let monitors = Monitor::all().with_context(|| "无法获取显示器列表")?;
+    let monitor = monitors.first().with_context(|| "没有找到屏幕")?;
+    let image = monitor.capture_image().with_context(|| "抓图失败")?;
 
-    let width = capture.width() as usize;
-    let height = capture.height() as usize;
-    let raw_pixels = capture.into_raw();
+    let width = image.width() as usize;
+    let height = image.height() as usize;
+    let raw_pixels = image.into_raw();
 
     // 2. 准备底层画布：高亮原图与全局变暗的底图
     let mut original_bg = vec![0u32; width * height];
