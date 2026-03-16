@@ -3,8 +3,8 @@ use anyhow::{Context, Result};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use std::collections::HashMap;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetWindowLongW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SetProcessDPIAware,
-    SetWindowLongW, SetWindowPos, WS_CAPTION, WS_THICKFRAME,
+    GWL_STYLE, GetWindowLongW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+    SetProcessDPIAware, SetWindowLongW, SetWindowPos, WS_CAPTION, WS_THICKFRAME,
 };
 use xcap::Monitor;
 
@@ -76,6 +76,10 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
         );
+
+        // 强行把新创建的窗口置于前台并激活
+        // 从而确保立即获得键盘焦点，这样第一时间按 Esc 就起效
+        SetForegroundWindow(hwnd);
     }
     // --- 🌟 彻底干掉白条的核心代码结束 ---
 
