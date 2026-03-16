@@ -3,13 +3,15 @@ use anyhow::{Context, Result};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use std::collections::HashMap;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetWindowLongW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+    GWL_STYLE, GetWindowLongPtrW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
     SetProcessDPIAware, SetWindowLongW, SetWindowPos, WS_CAPTION, WS_THICKFRAME,
 };
 use xcap::Monitor;
 
 pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     unsafe {
+        //我是一个非常现代的程序，我懂得什么是高分辨率和 DPI！
+        // 请你把真实的物理像素坐标告诉我，绝对不要在中间搞自动拉伸、不要对我撒谎！我自己会处理好一切！
         SetProcessDPIAware();
     }
 
@@ -59,7 +61,7 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     let hwnd = window.get_window_handle() as *mut std::ffi::c_void;
     unsafe {
         // 获取当前窗口的底层样式
-        let style = GetWindowLongW(hwnd, GWL_STYLE);
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         // 强行剔除标题栏 (WS_CAPTION) 和可调边框 (WS_THICKFRAME)
         SetWindowLongW(
             hwnd,
