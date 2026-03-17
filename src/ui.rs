@@ -1,4 +1,4 @@
-use crate::api::send_to_api;
+use crate::api::send_to_api_and_override_clipboard;
 use anyhow::{Context, Result};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use std::collections::HashMap;
@@ -16,8 +16,9 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     }
 
     // 1. 抓取屏幕并提取所有像素点
-    let monitors = Monitor::all().with_context(|| "无法获取显示器列表")?;
-    let monitor = monitors.first().with_context(|| "没有找到屏幕")?;
+    let monitor = Monitor::all()
+        .with_context(|| "无法获取显示器列表")?
+        .swap_remove(0);
     let image = monitor.capture_image().with_context(|| "抓图失败")?;
 
     let width = image.width() as usize;
@@ -29,9 +30,7 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     let mut dark_bg = vec![0u32; width * height];
 
     for (i, chunk) in raw_pixels.chunks_exact(4).enumerate() {
-        let r = chunk[0] as u32;
-        let g = chunk[1] as u32;
-        let b = chunk[2] as u32;
+        let (r, g, b) = (chunk[0] as u32, chunk[1] as u32, chunk[2] as u32);
 
         // minifb 使用 0RGB 格式
         let color = (r << 16) | (g << 8) | b;
@@ -48,14 +47,18 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
         width,
         height,
         WindowOptions {
-            borderless: true,
-            title: false,
-            topmost: true,
-            resize: false,
+            borderless: true,   // 无边框。目的：略
+            title: false,       // 隐藏标题栏。目的：略
+            topmost: true,      // 保持在最顶层。目的：略
+            resize: false,      // 禁止调整大小。目的：略
+            transparency: true, // 允许透明。目的：略
+            none: true,         // 剥离底层默认背景。目的：能防止激活时一闪而过的白闪
             ..WindowOptions::default()
         },
-    )
-    .unwrap();
+    )?;
+
+    // 立即推一次全暗的画面，防止窗口刚出来时白屏闪烁
+    window.update_with_buffer(&dark_bg, width, height).unwrap();
 
     // --- 🌟 彻底干掉白条的核心代码开始 ---
     let hwnd = window.get_window_handle() as *mut std::ffi::c_void;
@@ -91,7 +94,7 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
 
     let mut start_pos: Option<(f32, f32)> = None;
     let mut end_pos: Option<(f32, f32)> = None;
-    let mut is_selecting = false;
+    let mut is_drawing_rectangle = false;
     let mut final_rect = None;
 
     let mut current_buffer = dark_bg.clone();
@@ -101,89 +104,43 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
         let mouse_pos = window.get_mouse_pos(MouseMode::Clamp);
         let left_down = window.get_mouse_down(MouseButton::Left);
 
-        if left_down {
-            if !is_selecting {
-                start_pos = mouse_pos;
-                is_selecting = true;
-            }
-            end_pos = mouse_pos;
-        } else {
-            if is_selecting {
-                // 鼠标松开，确定最终框选坐标并退出循环
-                if let (Some(s), Some(e)) = (start_pos, end_pos) {
-                    let rx = s.0.min(e.0) as u32;
-                    let ry = s.1.min(e.1) as u32;
-                    let rw = (s.0 - e.0).abs() as u32;
-                    let rh = (s.1 - e.1).abs() as u32;
-                    if rw > 5 && rh > 5 {
-                        final_rect = Some((rx, ry, rw, rh));
-                    }
+        if !left_down && is_drawing_rectangle {
+            // 绘制完毕矩形
+            // 鼠标松开，确定最终框选坐标并退出循环
+            if let (Some(s), Some(e)) = (start_pos, end_pos) {
+                let rx = s.0.min(e.0) as u32;
+                let ry = s.1.min(e.1) as u32;
+                let rw = (s.0 - e.0).abs() as u32;
+                let rh = (s.1 - e.1).abs() as u32;
+                if rw > 5 && rh > 5 {
+                    final_rect = Some((rx, ry, rw, rh));
                 }
-                break;
             }
+            break;
+        }
+        if left_down {
+            //处理鼠标按下的逻辑
+            if !is_drawing_rectangle {
+                // 处理鼠标首次按下的逻辑--开始绘制矩形
+                start_pos = mouse_pos;
+                is_drawing_rectangle = true;
+            }
+            // 非鼠标首次按下，即已经在绘制矩形，实时更新鼠标位置
+            end_pos = mouse_pos;
         }
 
         // --- 画面重绘逻辑 ---
-        if is_selecting {
-            // 每帧先铺满暗色背景
-            current_buffer.copy_from_slice(&dark_bg);
-
-            if let (Some(s), Some(e)) = (start_pos, end_pos) {
-                let rx = s.0.min(e.0) as usize;
-                let ry = s.1.min(e.1) as usize;
-                let rw = (s.0 - e.0).abs() as usize;
-                let rh = (s.1 - e.1).abs() as usize;
-
-                // 核心：把框选区域的像素替换为原始高亮像素
-                for y in ry..=(ry + rh).min(height - 1) {
-                    let row_idx = y * width;
-                    let start_idx = row_idx + rx;
-                    let end_idx = row_idx + (rx + rw).min(width - 1);
-                    current_buffer[start_idx..=end_idx]
-                        .copy_from_slice(&original_bg[start_idx..=end_idx]);
-                }
-
-                // 画出 2px 宽度的纯绿边框
-                let border_color = 0x00_00_FF_00;
-                let border_thickness = 2;
-
-                // 上边缘和下边缘
-                for y in 0..border_thickness {
-                    if ry + y < height {
-                        let row_top = (ry + y) * width;
-                        for x in rx..=(rx + rw).min(width - 1) {
-                            current_buffer[row_top + x] = border_color;
-                        }
-                    }
-                    if ry + rh >= y && ry + rh - y < height {
-                        let row_bottom = (ry + rh - y) * width;
-                        for x in rx..=(rx + rw).min(width - 1) {
-                            current_buffer[row_bottom + x] = border_color;
-                        }
-                    }
-                }
-
-                // 左边缘和右边缘
-                for x in 0..border_thickness {
-                    if rx + x < width {
-                        for y in ry..=(ry + rh).min(height - 1) {
-                            current_buffer[y * width + rx + x] = border_color;
-                        }
-                    }
-                    if rx + rw >= x && rx + rw - x < width {
-                        for y in ry..=(ry + rh).min(height - 1) {
-                            current_buffer[y * width + rx + rw - x] = border_color;
-                        }
-                    }
-                }
-            }
-        } else {
-            current_buffer.copy_from_slice(&dark_bg);
-        }
-
-        window
-            .update_with_buffer(&current_buffer, width, height)
-            .unwrap();
+        render_frame(
+            &mut window,
+            &mut current_buffer,
+            &dark_bg,
+            &original_bg,
+            start_pos,
+            end_pos,
+            is_drawing_rectangle,
+            width,
+            height,
+        )?;
     }
 
     // 5. 交互结束，直接强制销毁窗口
@@ -198,10 +155,93 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
 
         let cropped = image::imageops::crop(&mut rgba_image, x, y, w, h).to_image();
 
-        send_to_api(config, cropped)?;
+        send_to_api_and_override_clipboard(config, cropped)?;
     } else {
         println!("取消截图或选区过小。");
     }
 
+    Ok(())
+}
+
+fn draw_rectangle(
+    start_pos: (f32, f32),
+    end_pos: (f32, f32),
+    current_buffer: &mut Vec<u32>,
+    width: usize,
+    height: usize,
+    original_bg: &Vec<u32>,
+) {
+    let rx = start_pos.0.min(end_pos.0) as usize; // 左上角 X 坐标
+    let ry = start_pos.1.min(end_pos.1) as usize; // 左上角 Y 坐标
+    let rw = (start_pos.0 - end_pos.0).abs() as usize; // 矩形宽度
+    let rh = (start_pos.1 - end_pos.1).abs() as usize; // 矩形高度
+
+    // 核心：把框选区域的像素替换为原始高亮像素
+    // .min(height - 1) 是为了防止鼠标拖出屏幕下方导致数组越界崩溃
+    for y in ry..=(ry + rh).min(height - 1) {
+        let row_idx = y * width;
+        let start_idx = row_idx + rx;
+        let end_idx = row_idx + (rx + rw).min(width - 1);
+        current_buffer[start_idx..=end_idx].copy_from_slice(&original_bg[start_idx..=end_idx]);
+    }
+
+    // 画出 2px 宽度的纯绿边框
+    let border_color = 0x00_00_FF_00;
+    let border_thickness = 2;
+
+    // 上边缘和下边缘
+    for y in 0..border_thickness {
+        if ry + y < height {
+            let row_top = (ry + y) * width; // 算出这一行在一维数组里的起点索引
+            for x in rx..=(rx + rw).min(width - 1) {
+                // 横向从左(rx)一路循环到右(rx+rw)
+                current_buffer[row_top + x] = border_color; // 全部涂成绿色！
+            }
+        }
+        if ry + rh >= y && ry + rh - y < height {
+            let row_bottom = (ry + rh - y) * width;
+            for x in rx..=(rx + rw).min(width - 1) {
+                current_buffer[row_bottom + x] = border_color;
+            }
+        }
+    }
+
+    // 左边缘和右边缘
+    for x in 0..border_thickness {
+        if rx + x < width {
+            for y in ry..=(ry + rh).min(height - 1) {
+                current_buffer[y * width + rx + x] = border_color;
+            }
+        }
+        if rx + rw >= x && rx + rw - x < width {
+            for y in ry..=(ry + rh).min(height - 1) {
+                current_buffer[y * width + rx + rw - x] = border_color;
+            }
+        }
+    }
+}
+
+/// 画面重绘，每一帧的逻辑
+fn render_frame(
+    window: &mut Window,
+    current_buffer: &mut Vec<u32>,
+    dark_bg: &Vec<u32>,
+    original_bg: &Vec<u32>,
+    start_pos: Option<(f32, f32)>,
+    end_pos: Option<(f32, f32)>,
+    is_drawing_rectangle: bool,
+    width: usize,
+    height: usize,
+) -> Result<()> {
+    // 每帧先铺满暗色背景
+    current_buffer.copy_from_slice(&dark_bg);
+    //渲染选中的矩形
+    if is_drawing_rectangle {
+        if let (Some(s), Some(e)) = (start_pos, end_pos) {
+            draw_rectangle(s, e, current_buffer, width, height, &original_bg);
+        }
+    }
+
+    window.update_with_buffer(&current_buffer, width, height)?;
     Ok(())
 }

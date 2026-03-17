@@ -4,9 +4,12 @@ use base64::prelude::*;
 use std::collections::HashMap;
 use std::io::Cursor;
 
-pub fn send_to_api(config: &HashMap<String, String>, img: image::RgbaImage) -> Result<()> {
+pub fn send_to_api_and_override_clipboard(
+    config: &HashMap<String, String>,
+    img: image::RgbaImage,
+) -> Result<()> {
     let mut clipboard = Clipboard::new()?;
-    clipboard.set_text("")?; // 清空剪贴板
+    clipboard.clear().with_context(|| "清空剪贴板失败")?;
 
     let mut png_buffer = Cursor::new(Vec::new()); //将一维内存数组包装成一个符合标准 I/O 规范的虚拟流对象
     img.write_to(&mut png_buffer, image::ImageFormat::Png)?;
@@ -48,18 +51,21 @@ pub fn send_to_api(config: &HashMap<String, String>, img: image::RgbaImage) -> R
         .header("Content-Type", "application/json")
         .send(payload_str)?;
 
-    let response_text = response.body_mut().read_to_string()?;
+    let response_text = response.body_mut().read_to_string()?; // 因为是边读边复用，所以必须是可变借用！？
     let response_json: serde_json::Value = serde_json::from_str(&response_text)?;
 
-    if let Some(content) = response_json["choices"][0]["message"]["content"].as_str() {
-        let latex_code = content.trim();
-        println!("识别完成！\n{}", latex_code);
+    match response_json["choices"][0]["message"]["content"].as_str() {
+        Some(content) => {
+            let latex_code = content.trim();
+            println!("识别完成！\n{}", latex_code);
 
-        clipboard.set_text(latex_code)?;
-        println!("==== 已成功复制到剪贴板 ====");
-    } else {
-        eprintln!("API 响应格式异常: {}", response_text);
+            clipboard.set_text(latex_code)?;
+            println!("==== 已成功复制到剪贴板 ====");
+            Ok(())
+        }
+
+        None => {
+            anyhow::bail!("API 响应格式异常: {}", response_text);
+        }
     }
-
-    Ok(())
 }
