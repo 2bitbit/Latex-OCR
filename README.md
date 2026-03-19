@@ -4,9 +4,16 @@ Windows 平台的一个基于 Rust 开发、超轻量级(后台静默时内存�
 
 通过调用最新多模态大模型的 API，本项目可以一键将屏幕上的数学公式截图转换为纯文本的 LaTeX 源码，并自动写入系统剪贴板。
 
-<img src="./demo1.gif" width=75% style="display: block; margin: 0 auto;">
+<div align="center">
+  <img src="./demo1.gif" width=75%>
+</div>
 <br>
-<img src="./demo2.png" width=75% style="display: block; margin: 0 auto;">
+<div align="center">
+  <img src="./demo2.png" width=75%>
+</div>
+
+
+
 
 ## 核心特性
 
