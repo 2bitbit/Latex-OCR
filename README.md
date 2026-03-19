@@ -4,6 +4,10 @@ Windows 平台的一个基于 Rust 开发、超轻量级(后台静默时内存�
 
 通过调用最新多模态大模型的 API，本项目可以一键将屏幕上的数学公式截图转换为纯文本的 LaTeX 源码，并自动写入系统剪贴板。
 
+<img src="./demo1.gif" width=75% style="display: block; margin: 0 auto;">
+<br>
+<img src="./demo2.png" width=75% style="display: block; margin: 0 auto;">
+
 ## 核心特性
 
 * **极致内存控制：** 在后台常驻时几乎不占用额外的 CPU 和内存资源。
@@ -39,4 +43,4 @@ MODEL=doubao-seed-2-0-mini-260215
 6. 直接在 Word、Markdown 或 LaTeX 编辑器中 `Ctrl + V` 粘贴即可。
 
 ### 3. 进阶配置
-配置开机自启动：打开Task Scheduler，创建一个新任务，设置触发器为登录时，操作选择启动程序，程序路径为 `Latex-OCR.exe`，即可实现开机自启动。
+配置开机自启动：打开 Task Scheduler，创建一个新任务，设置触发器为登录时，操作选择启动程序，程序路径为 `Latex-OCR.exe`，即可实现开机自启动。

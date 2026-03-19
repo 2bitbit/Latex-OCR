@@ -33,7 +33,7 @@ pub fn send_to_api_and_override_clipboard(
                 "content": [
                     {
                         "type": "text",
-                        "text": "Please output ONLY the raw LaTeX code for the math formulas in this image. Do NOT use any formatting or wrappers."
+                        "text": "请仅仅输入图片中公式的 LaTex 源码，不要用诸如$、\\[、```此类的任何东西包裹。"
                     },
                     {
                         "type": "image_url",
