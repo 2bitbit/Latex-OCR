@@ -2,7 +2,8 @@ use crate::api::send_to_api_and_override_clipboard;
 use anyhow::{Context, Result};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use std::collections::HashMap;
-use windows_sys::Win32::UI::WindowsAndMessaging::{
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::{
     GWL_STYLE, GetWindowLongPtrW, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
     SetProcessDPIAware, SetWindowLongW, SetWindowPos, WS_CAPTION, WS_THICKFRAME,
 };
@@ -12,7 +13,7 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     unsafe {
         //我是一个非常现代的程序，我懂得什么是高分辨率和 DPI！
         // 请你把真实的物理像素坐标告诉我，绝对不要在中间搞自动拉伸、不要对我撒谎！我自己会处理好一切！
-        SetProcessDPIAware();
+        let _ = SetProcessDPIAware();
     }
 
     // 1. 抓取屏幕并提取所有像素点
@@ -61,7 +62,7 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
     window.update_with_buffer(&dark_bg, width, height).unwrap();
 
     // --- 🌟 彻底干掉白条的核心代码开始 ---
-    let hwnd = window.get_window_handle() as *mut std::ffi::c_void;
+    let hwnd = HWND(window.get_window_handle());
     unsafe {
         // 获取当前窗口的底层样式
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
@@ -69,12 +70,12 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
         SetWindowLongW(
             hwnd,
             GWL_STYLE,
-            ((style as u32) & !WS_CAPTION & !WS_THICKFRAME) as i32,
+            ((style as u32) & !WS_CAPTION.0 & !WS_THICKFRAME.0) as i32,
         );
         // 通知 Windows 刷新窗口样式，使其瞬间生效
-        SetWindowPos(
+        let _ = SetWindowPos(
             hwnd,
-            std::ptr::null_mut(),
+            None,
             0,
             0,
             0,
@@ -84,7 +85,7 @@ pub fn run_capture_ui_and_ocr(config: &HashMap<String, String>) -> Result<()> {
 
         // 强行把新创建的窗口置于前台并激活
         // 从而确保立即获得键盘焦点，这样第一时间按 Esc 就起效
-        SetForegroundWindow(hwnd);
+        let _ = SetForegroundWindow(hwnd);
     }
     // --- 🌟 彻底干掉白条的核心代码结束 ---
 

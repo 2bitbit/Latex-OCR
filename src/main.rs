@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use std::sync::LazyLock;
 use std::sync::atomic::AtomicBool;
-use windows_sys::Win32::UI::WindowsAndMessaging::{
+use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, MSG, TranslateMessage,
 };
 
@@ -25,7 +25,7 @@ fn main() -> Result<()> {
         // 去读取底层消息，以便让register_hotkey内的 receiver.recv() 才能拿到 Pressed 状态
         let mut msg: MSG = std::mem::zeroed();
         // 阻塞，等待消息
-        while GetMessageW(&mut msg, 0 as _, 0, 0) > 0 {
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
